@@ -1,0 +1,8 @@
+^\.git$
+^\.gitignore$
+^pyproject\.toml$
+^src$
+^configs$
+^docs$
+^biomet_package$
+

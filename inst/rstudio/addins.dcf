@@ -1,0 +1,4 @@
+Name: Launch BIOMET GUI
+Description: Open the BIOMET Shiny interface.
+Binding: biomet_gui
+Interactive: true

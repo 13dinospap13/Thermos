@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="BIOMET icon">
+  <rect width="128" height="128" rx="28" fill="#17324d"/>
+  <rect x="16" y="16" width="96" height="96" rx="22" fill="#f4f1e8"/>
+  <circle cx="44" cy="44" r="16" fill="#5ec962"/>
+  <circle cx="84" cy="44" r="16" fill="#1f9e89"/>
+  <circle cx="44" cy="84" r="16" fill="#f6c141"/>
+  <circle cx="84" cy="84" r="16" fill="#2c7fb8"/>
+  <path d="M64 24v80M24 64h80" stroke="#17324d" stroke-width="8" stroke-linecap="round" opacity="0.9"/>
+</svg>

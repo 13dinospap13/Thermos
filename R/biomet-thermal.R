@@ -1,0 +1,608 @@
+biomet_compute_shadow <- function(dsm_r, dem_r, zenith_deg, azimuth_deg) {
+  r <- terra::res(dsm_r)[1]
+  tan_elev <- tan((90 - zenith_deg) * pi / 180)
+  az_rad <- azimuth_deg * pi / 180
+  dx <- sin(az_rad)
+  dy <- -cos(az_rad)
+  mat <- as.matrix(dsm_r, wide = TRUE)
+  nr <- nrow(mat)
+  nc <- ncol(mat)
+  shd <- matrix(1L, nrow = nr, ncol = nc)
+  max_steps <- ceiling(150 / r)
+
+  for (row in seq_len(nr)) {
+    for (col in seq_len(nc)) {
+      h0 <- mat[row, col]
+      if (is.na(h0)) {
+        next
+      }
+      for (s in seq_len(max_steps)) {
+        cr <- round(row + dy * s)
+        cc <- round(col + dx * s)
+        if (cr < 1 || cr > nr || cc < 1 || cc > nc) {
+          break
+        }
+        h_obs <- mat[cr, cc]
+        if (is.na(h_obs)) {
+          break
+        }
+        h_req <- h0 + tan_elev * r * s
+        if (h_obs > h_req) {
+          shd[row, col] <- 0L
+          break
+        }
+      }
+    }
+  }
+
+  out <- terra::setValues(terra::rast(dsm_r), as.vector(t(shd)))
+  ov <- terra::values(out, mat = FALSE)
+  ov[is.na(terra::values(dem_r, mat = FALSE))] <- NA
+  terra::values(out) <- ov
+  out
+}
+
+biomet_compute_I0 <- function(doy, hour_utc, lat_deg) {
+  Isc <- 1367
+  B <- 2 * pi * (doy - 1) / 365
+  Ecc <- 1.00011 + 0.034221 * cos(B) + 0.00128 * sin(B) +
+    0.000719 * cos(2 * B) + 0.000077 * sin(2 * B)
+  decl <- 0.006918 - 0.399912 * cos(B) + 0.070257 * sin(B) -
+    0.006758 * cos(2 * B) + 0.000907 * sin(2 * B)
+  hour_angle <- (hour_utc - 12) * pi / 12
+  lat_rad <- lat_deg * pi / 180
+  cos_z <- sin(lat_rad) * sin(decl) + cos(lat_rad) * cos(decl) * cos(hour_angle)
+  Isc * Ecc * pmax(cos_z, 0)
+}
+
+biomet_save_rast <- function(vec, name, ref, file_id, out_dir, dem_vals) {
+  r <- terra::setValues(terra::rast(ref), vec)
+  rv <- terra::values(r, mat = FALSE)
+  rv[is.na(dem_vals)] <- NA
+  terra::values(r) <- rv
+  path <- file.path(out_dir, paste0(name, "_", file_id, ".tif"))
+  terra::writeRaster(r, path, overwrite = TRUE)
+  r
+}
+
+biomet_calc_pet <- function(ta, tr, v, vp, M, icl, ht, mbody) {
+  Adu <- 0.203 * mbody^0.425 * ht^0.725
+  M_w2 <- M / Adu
+  fcl <- 1 + 0.31 * icl / 0.155
+  hc <- pmax(2.38 * abs(tr - ta)^0.25, 12.1 * sqrt(v))
+  hr <- 4 * 0.97 * 5.67e-8 * ((tr + ta) / 2 + 273)^3
+  Tsk <- 34 - 0.065 * (M_w2 - 83)
+  Tcl <- (Tsk + (hc * ta + hr * tr) * icl * fcl) / (1 + icl * fcl * (hc + hr))
+  E_sw <- 0.42 * (M_w2 - 58.15)
+  E_re <- 1.7e-5 * M_w2 * (5867 - vp * 100) + 0.0014 * M_w2 * (34 - ta)
+  R_cl <- fcl * hr * (Tcl - tr)
+  C_cl <- fcl * hc * (Tcl - ta)
+  ta + (M_w2 - E_sw - E_re - R_cl - C_cl - 58.15) / (hc + hr)
+}
+
+biomet_calc_set <- function(ta, tr, v, rh, M, icl, ht, mbody) {
+  Adu <- 0.203 * mbody^0.425 * ht^0.725
+  M_w2 <- M / Adu
+  pa_kPa <- rh / 100 * 0.6112 * exp(17.67 * ta / (ta + 243.5))
+  hc <- pmax(3 * v^0.6, 8.3 * sqrt(v))
+  hr <- 4.7
+  h <- hc + hr
+  fcl <- 1 + 0.31 * icl / 0.155
+  Fcl <- 1 / (1 + 0.155 * icl * fcl * h)
+  T_op <- (hc * ta + hr * tr) / h
+  Tsk <- 34 - 0.065 * (M_w2 - 83)
+  w <- pmin(pmax(0.06, 0.06 + 0.42 * (M_w2 - 58.15) / 10.7), 1.0)
+  P_sk_s <- 0.6112 * exp(17.27 * Tsk / (Tsk + 237.3))
+  Emax <- hc * fcl * 16.5 * (P_sk_s - pa_kPa)
+  E_sk <- w * Emax
+  Eres <- 0.0023 * M_w2 * (44 - pa_kPa * 7.5)
+  Cres <- 0.0014 * M_w2 * (34 - ta)
+  S <- M_w2 - E_sk - Eres - Cres - h * Fcl * (Tsk - T_op)
+  T_op - S / (h * Fcl)
+}
+
+biomet_lc_load <- function(name, plot_suffix, lc_dir, dem, dem_vals) {
+  p <- file.path(lc_dir, paste0(name, "_", plot_suffix, ".tif"))
+  if (!file.exists(p)) {
+    return(NULL)
+  }
+  r <- terra::rast(p)
+  if (!all(terra::res(r) == terra::res(dem))) {
+    r <- terra::resample(r, dem, method = "bilinear")
+  }
+  vals <- terra::values(r, mat = FALSE)
+  vals[is.na(dem_vals)] <- NA
+  terra::values(r) <- vals
+  r
+}
+
+biomet_lc_load_safe <- function(name, default, plot_suffix, lc_dir, dem, dem_vals) {
+  r <- biomet_lc_load(name, plot_suffix, lc_dir, dem, dem_vals)
+  if (is.null(r)) {
+    return(biomet_make_const_rast(dem, default))
+  }
+  rv <- terra::values(r, mat = FALSE)
+  rv[is.nan(rv)] <- NA
+  if (sum(!is.na(rv)) == 0) {
+    return(biomet_make_const_rast(dem, default))
+  }
+  terra::values(r) <- rv
+  biomet_fill_default_in_mask(r, dem, default)
+}
+
+biomet_thermal_comfort_one_plot <- function(dem_dir,
+                                            dsm_dir,
+                                            svf_dir,
+                                            lc_dir,
+                                            out_dir,
+                                            plot_suffix,
+                                            met_df,
+                                            alpha_k = 0.70,
+                                            eps_p = 0.97,
+                                            Met = 80,
+                                            Clo = 0.9,
+                                            ht = 1.75,
+                                            mbody = 75) {
+  dem_path <- biomet_first_match(dem_dir, paste0(plot_suffix, "\\.tif$"), "DEM")
+  dsm_path <- biomet_first_match(dsm_dir, paste0(plot_suffix, "\\.tif$"), "DSM")
+  svf_path <- biomet_first_match(svf_dir, paste0(plot_suffix, "\\.tif$"), "SVF")
+
+  dem <- terra::rast(dem_path)
+  dsm <- terra::rast(dsm_path)
+  svf <- terra::rast(svf_path)
+
+  if (!all(terra::res(dsm) == terra::res(dem))) {
+    dsm <- terra::resample(dsm, dem, method = "bilinear")
+  }
+  if (!all(terra::res(svf) == terra::res(dem))) {
+    svf <- terra::resample(svf, dem, method = "bilinear")
+  }
+
+  dem_vals <- terra::values(dem, mat = FALSE)
+  dem_vals[is.nan(dem_vals)] <- NA
+  svf_vals <- terra::values(svf, mat = FALSE)
+  svf_vals[is.na(dem_vals)] <- NA
+  terra::values(svf) <- svf_vals
+
+  albedo_r <- biomet_lc_load_safe("albedo", 0.15, plot_suffix, lc_dir, dem, dem_vals)
+  emis_r <- biomet_lc_load_safe("emis", 0.95, plot_suffix, lc_dir, dem, dem_vals)
+  gai_r <- biomet_lc_load_safe("gai", 0.0, plot_suffix, lc_dir, dem, dem_vals)
+  k_ext_r <- biomet_lc_load_safe("k_ext", 0.5, plot_suffix, lc_dir, dem, dem_vals)
+  et_scale_r <- biomet_lc_load_safe("et_scale", 0.0, plot_suffix, lc_dir, dem, dem_vals)
+  z0_r <- biomet_lc_load_safe("z0", 0.5, plot_suffix, lc_dir, dem, dem_vals)
+  wall_emis_r <- biomet_lc_load_safe("wall_emis", 0.92, plot_suffix, lc_dir, dem, dem_vals)
+  wall_alb_r <- biomet_lc_load_safe("wall_albedo", 0.0, plot_suffix, lc_dir, dem, dem_vals)
+
+  centroid_wgs84 <- terra::project(
+    terra::vect(
+      matrix(
+        c(
+          mean(c(terra::xmin(terra::ext(dem)), terra::xmax(terra::ext(dem)))),
+          mean(c(terra::ymin(terra::ext(dem)), terra::ymax(terra::ext(dem))))
+        ),
+        ncol = 2
+      ),
+      crs = terra::crs(dem)
+    ),
+    "EPSG:4326"
+  )
+  lon_site <- terra::geom(centroid_wgs84)[, "x"]
+  lat_site <- terra::geom(centroid_wgs84)[, "y"]
+
+  summary_df <- data.frame(
+    plot = character(),
+    ts_id = character(),
+    date = character(),
+    hour_utc = integer(),
+    Ta = numeric(),
+    RH = numeric(),
+    va_11m = numeric(),
+    Tmrt_mean = numeric(),
+    PET_mean = numeric(),
+    mPET_mean = numeric(),
+    PMV_mean = numeric(),
+    SET_mean = numeric(),
+    UTCI_mean = numeric(),
+    stringsAsFactors = FALSE
+  )
+
+  for (i in seq_len(nrow(met_df))) {
+    row <- met_df[i, ]
+    hour_utc <- as.integer(row$hour_utc)
+    Ta_val <- as.numeric(row$Ta)
+    Td_val <- as.numeric(row$Td)
+    u10_val <- as.numeric(row$u10)
+    v10_val <- as.numeric(row$v10)
+    ssrd_val <- as.numeric(row$ssrd)
+    strd_val <- as.numeric(row$strd)
+    slhf_val <- as.numeric(row$slhf)
+
+    date_str <- format(as.Date(row$date), "%Y-%m-%d")
+    ts <- as.POSIXct(paste(date_str, sprintf("%02d:00:00", hour_utc)), tz = "UTC")
+    ts_id <- format(ts, "%Y%m%d_%H")
+    file_id <- paste0(plot_suffix, "_", ts_id)
+    doy <- lubridate::yday(ts)
+
+    va_val <- sqrt(u10_val^2 + v10_val^2)
+    es_val <- 6.112 * exp(17.67 * Ta_val / (Ta_val + 243.5))
+    ea_val <- 6.112 * exp(17.67 * Td_val / (Td_val + 243.5))
+    rh_val <- min(max((ea_val / es_val) * 100, 0), 100)
+
+    sol <- solartime::computeSunPosition(timestamp = ts, latDeg = lat_site, longDeg = lon_site)
+    solar_elev <- as.numeric(sol[, "elevation"]) * 180 / pi
+    solar_az <- as.numeric(sol[, "azimuth"]) * 180 / pi
+    solar_zenith <- 90 - solar_elev
+
+    if (solar_zenith >= 90) {
+      next
+    }
+
+    Ta_r <- biomet_make_const_rast(dem, Ta_val)
+    va_r <- biomet_make_const_rast(dem, va_val)
+    ssrd <- biomet_make_const_rast(dem, ssrd_val)
+    strd <- biomet_make_const_rast(dem, strd_val)
+    rh_r <- biomet_make_const_rast(dem, rh_val)
+    slhf_r <- biomet_make_const_rast(dem, slhf_val)
+
+    I0 <- biomet_compute_I0(doy, hour_utc, lat_site)
+    if (I0 < 1) {
+      next
+    }
+
+    kt <- terra::clamp(ssrd / I0, 0, 1)
+    fd <- terra::ifel(
+      kt <= 0.22,
+      1 - 0.09 * kt,
+      terra::ifel(
+        kt <= 0.80,
+        0.9511 - 0.1604 * kt + 4.388 * kt^2 - 16.638 * kt^3 + 12.336 * kt^4,
+        0.165
+      )
+    )
+    K_diff <- ssrd * fd
+    K_dir <- ssrd * (1 - fd)
+
+    rho_air <- 1.2
+    Cp <- 1005
+    h_mix <- 50
+    dTa_cool <- terra::clamp((slhf_r * et_scale_r) / (rho_air * Cp * h_mix), 0, 5)
+    Ta_r <- Ta_r - dTa_cool
+
+    z_ref <- 10.0
+    z_target <- 1.1
+    va_11m_r <- terra::clamp(va_r * log(z_target / z0_r) / log(z_ref / z0_r), 0.5, 17)
+
+    shadow <- biomet_compute_shadow(dsm, dem, solar_zenith, solar_az)
+    shd_v <- terra::values(shadow, mat = FALSE)
+    shd_v[is.na(dem_vals)] <- NA
+    terra::values(shadow) <- shd_v
+
+    tau_sw <- exp(-k_ext_r * gai_r)
+    tau_lw <- exp(-0.9 * gai_r)
+    sigma <- 5.67e-8
+    Tc <- Ta_r - terra::ifel(gai_r > 0, 3.0, 0)
+    L_canopy <- 0.96 * sigma * (Tc + 273.15)^4
+
+    K_up <- ssrd * albedo_r
+    K_down <- K_diff * svf * tau_sw
+    K_dir_att <- K_dir * shadow * tau_sw
+    L_up <- emis_r * sigma * (Ta_r + 273.15)^4
+    L_wall <- wall_emis_r * sigma * (Ta_r + 273.15)^4
+    L_down <- (strd * svf + L_wall * (1 - svf)) * tau_lw + L_canopy * (1 - tau_lw)
+    K_wall <- ssrd * wall_alb_r * (1 - svf)
+    sum_K <- (K_dir_att + K_down + K_up + 4 * 0.5 * (K_down + K_up + K_wall)) / 6
+    sum_L <- (L_down + L_up + 4 * (0.5 * L_down + 0.5 * L_up)) / 6
+
+    Tmrt_C <- ((alpha_k / eps_p * sum_K + sum_L) / sigma)^0.25 - 273.15
+    terra::writeRaster(
+      Tmrt_C,
+      file.path(out_dir, paste0("Tmrt_", file_id, ".tif")),
+      overwrite = TRUE
+    )
+
+    ta_v <- terra::values(Ta_r, mat = FALSE)
+    tr_v <- terra::values(Tmrt_C, mat = FALSE)
+    rh_v <- terra::values(rh_r, mat = FALSE)
+    v_v <- terra::values(va_11m_r, mat = FALSE)
+    n <- length(ta_v)
+    valid <- !is.na(ta_v) & !is.na(tr_v) & !is.na(v_v) & !is.na(rh_v)
+
+    ta <- ta_v[valid]
+    tr <- tr_v[valid]
+    rh <- rh_v[valid]
+    v <- pmax(v_v[valid], 0.1)
+    vp <- rh / 100 * 6.112 * exp(17.67 * ta / (ta + 243.5))
+
+    Adu <- 0.203 * mbody^0.425 * ht^0.725
+    fcl <- 1 + 0.15 * Clo
+    M <- Met / Adu
+    icl <- Clo * 0.155
+
+    pa <- vp * 100
+    tcl <- ta + (35.5 - ta) / (3.5 * (6.45 * icl + 0.1))
+    hcf <- pmax(2.38 * abs(tcl - ta)^0.25, 12.1 * sqrt(v))
+    tcl <- (35.7 - 0.0275 * M - icl * (3.96e-8 * fcl * ((tcl + 273)^4 - (tr + 273)^4) +
+      fcl * hcf * (tcl - ta))) /
+      (1 + icl * (3.96e-8 * fcl * 4 * (tcl + 273)^3 + fcl * hcf))
+    L <- M - 3.05e-3 * (5733 - 6.99 * M - pa) -
+      0.42 * (M - 58.15) - 1.7e-5 * M * (5867 - pa) -
+      0.0014 * M * (34 - ta) -
+      3.96e-8 * fcl * ((tcl + 273)^4 - (tr + 273)^4) -
+      fcl * hcf * (tcl - ta)
+    pmv_tmp <- (0.303 * exp(-0.036 * M) + 0.028) * L
+
+    D_Tmrt <- pmin(pmax(tr - ta, -30), 70)
+    v_utci <- pmin(pmax(v, 0.5), 17)
+    pa_utci <- pmin(pmax(vp / 10, 0), 5)
+    ta_u <- pmin(pmax(ta, -50), 50)
+
+    utci_tmp <- ta_u +
+      (6.07562052e-01) + (-2.27712343e-02) * ta_u + (8.06470249e-04) * ta_u^2 +
+      (-1.54271372e-04) * ta_u^3 + (-3.24651995e-06) * ta_u^4 + (7.32602852e-08) * ta_u^5 +
+      (1.35959073e-09) * ta_u^6 + (-2.25836520e+00) * v_utci + (8.80326035e-02) * ta_u * v_utci +
+      (2.16844454e-03) * ta_u^2 * v_utci + (-1.53347087e-05) * ta_u^3 * v_utci +
+      (-5.72983704e-07) * ta_u^4 * v_utci + (-2.55090145e-09) * ta_u^5 * v_utci +
+      (-7.51269505e-01) * v_utci^2 + (-4.08350271e-03) * ta_u * v_utci^2 +
+      (-5.21670675e-05) * ta_u^2 * v_utci^2 + (1.94544667e-06) * ta_u^3 * v_utci^2 +
+      (1.14099205e-08) * ta_u^4 * v_utci^2 + (1.58137256e-01) * v_utci^3 +
+      (-6.57263143e-04) * ta_u * v_utci^3 + (2.22697524e-05) * ta_u^2 * v_utci^3 +
+      (-4.16117031e-08) * ta_u^3 * v_utci^3 + (-1.27762753e-02) * v_utci^4 +
+      (9.66891875e-05) * ta_u * v_utci^4 + (2.52785852e-06) * ta_u^2 * v_utci^4 +
+      (4.56306672e-04) * v_utci^5 + (-1.74202546e-06) * ta_u * v_utci^5 +
+      (-5.91491269e-06) * v_utci^6 + (3.98374109e-01) * D_Tmrt +
+      (1.83945314e-04) * ta_u * D_Tmrt + (-1.73754510e-04) * ta_u^2 * D_Tmrt +
+      (-7.60781159e-07) * ta_u^3 * D_Tmrt + (3.77830287e-08) * ta_u^4 * D_Tmrt +
+      (5.43079673e-10) * ta_u^5 * D_Tmrt + (-2.00518269e-02) * v_utci * D_Tmrt +
+      (8.92859837e-04) * ta_u * v_utci * D_Tmrt + (3.45433048e-06) * ta_u^2 * v_utci * D_Tmrt +
+      (-3.77925774e-07) * ta_u^3 * v_utci * D_Tmrt + (-1.69699377e-09) * ta_u^4 * v_utci * D_Tmrt +
+      (1.69992415e-04) * v_utci^2 * D_Tmrt + (-4.99204314e-05) * ta_u * v_utci^2 * D_Tmrt +
+      (2.47417178e-07) * ta_u^2 * v_utci^2 * D_Tmrt + (1.07596466e-08) * ta_u^3 * v_utci^2 * D_Tmrt +
+      (8.49242932e-05) * v_utci^3 * D_Tmrt + (1.35191328e-06) * ta_u * v_utci^3 * D_Tmrt +
+      (-6.21531254e-09) * ta_u^2 * v_utci^3 * D_Tmrt + (-4.99410301e-06) * v_utci^4 * D_Tmrt +
+      (-1.89489258e-08) * ta_u * v_utci^4 * D_Tmrt + (8.15300114e-08) * v_utci^5 * D_Tmrt +
+      (7.55043090e-04) * D_Tmrt^2 + (-5.65095215e-05) * ta_u * D_Tmrt^2 +
+      (-4.52166564e-07) * ta_u^2 * D_Tmrt^2 + (2.46688878e-08) * ta_u^3 * D_Tmrt^2 +
+      (2.42674348e-10) * ta_u^4 * D_Tmrt^2 + (1.54547250e-04) * v_utci * D_Tmrt^2 +
+      (5.24110970e-06) * ta_u * v_utci * D_Tmrt^2 + (-8.75874982e-08) * ta_u^2 * v_utci * D_Tmrt^2 +
+      (-1.50743064e-09) * ta_u^3 * v_utci * D_Tmrt^2 + (-1.56236307e-05) * v_utci^2 * D_Tmrt^2 +
+      (-1.33895614e-07) * ta_u * v_utci^2 * D_Tmrt^2 + (2.49709824e-09) * ta_u^2 * v_utci^2 * D_Tmrt^2 +
+      (6.51711721e-07) * v_utci^3 * D_Tmrt^2 + (1.94960053e-09) * ta_u * v_utci^3 * D_Tmrt^2 +
+      (-1.00361113e-08) * v_utci^4 * D_Tmrt^2 + (-1.21206673e-05) * D_Tmrt^3 +
+      (-2.18203660e-07) * ta_u * D_Tmrt^3 + (7.51269482e-09) * ta_u^2 * D_Tmrt^3 +
+      (9.79063848e-11) * ta_u^3 * D_Tmrt^3 + (1.25411264e-08) * v_utci * D_Tmrt^3 +
+      (-6.67742461e-10) * ta_u * v_utci * D_Tmrt^3 + (2.20927476e-10) * ta_u^2 * v_utci * D_Tmrt^3 +
+      (-4.06016116e-09) * v_utci^2 * D_Tmrt^3 + (3.14168468e-11) * ta_u * v_utci^2 * D_Tmrt^3 +
+      (2.33146963e-11) * v_utci^3 * D_Tmrt^3 + (-6.85399141e-08) * D_Tmrt^4 +
+      (3.55298533e-10) * ta_u * D_Tmrt^4 + (1.40272308e-11) * ta_u^2 * D_Tmrt^4 +
+      (-1.85492662e-11) * v_utci * D_Tmrt^4 + (-1.22442541e-12) * ta_u * v_utci * D_Tmrt^4 +
+      (-1.90539528e-12) * v_utci^2 * D_Tmrt^4 + (1.13901640e-11) * D_Tmrt^5 +
+      (1.00716234e-13) * ta_u * D_Tmrt^5 + (-1.20268494e-13) * v_utci * D_Tmrt^5 +
+      (-8.72647004e-14) * D_Tmrt^6 + (2.66836399e+00) * pa_utci +
+      (1.59762500e-02) * ta_u * pa_utci + (-7.93531032e-03) * ta_u^2 * pa_utci +
+      (-4.75059040e-04) * ta_u^3 * pa_utci + (1.47966723e-05) * ta_u^4 * pa_utci +
+      (1.11982569e-07) * ta_u^5 * pa_utci + (3.83469289e-02) * v_utci * pa_utci +
+      (-2.35033737e-03) * ta_u * v_utci * pa_utci + (-4.78156212e-05) * ta_u^2 * v_utci * pa_utci +
+      (1.22206323e-06) * ta_u^3 * v_utci * pa_utci + (-1.15789920e-04) * v_utci^2 * pa_utci +
+      (1.52462354e-05) * ta_u * v_utci^2 * pa_utci + (-5.34898432e-07) * ta_u^2 * v_utci^2 * pa_utci +
+      (2.10793499e-06) * v_utci^3 * pa_utci + (-2.31382535e-07) * ta_u * v_utci^3 * pa_utci +
+      (1.67677569e-08) * v_utci^4 * pa_utci
+
+    pet_tmp <- biomet_calc_pet(ta, tr, v, vp, Met, icl, ht, mbody)
+    Top <- 0.5 * ta + 0.5 * tr
+    icl_auto <- pmax(pmin((-0.1635 * Top + 4.9431) * 0.155, 0.9 * 0.155), 0.1 * 0.155)
+    mpet_tmp <- biomet_calc_pet(ta, tr, v, vp, Met, icl_auto, ht, mbody)
+    set_tmp <- biomet_calc_set(ta, tr, v, rh, Met, icl, ht, mbody)
+
+    pet_v <- rep(NA_real_, n)
+    mpet_v <- rep(NA_real_, n)
+    pmv_v <- rep(NA_real_, n)
+    set_v <- rep(NA_real_, n)
+    utci_v <- rep(NA_real_, n)
+    pet_v[valid] <- pet_tmp
+    mpet_v[valid] <- mpet_tmp
+    pmv_v[valid] <- pmv_tmp
+    set_v[valid] <- set_tmp
+    utci_v[valid] <- utci_tmp
+
+    pet_r <- biomet_save_rast(pet_v, "PET", Ta_r, file_id, out_dir, dem_vals)
+    mpet_r <- biomet_save_rast(mpet_v, "mPET", Ta_r, file_id, out_dir, dem_vals)
+    pmv_r <- biomet_save_rast(pmv_v, "PMV", Ta_r, file_id, out_dir, dem_vals)
+    set_r <- biomet_save_rast(set_v, "SET", Ta_r, file_id, out_dir, dem_vals)
+    utci_r <- biomet_save_rast(utci_v, "UTCI", Ta_r, file_id, out_dir, dem_vals)
+
+    utci_class <- terra::classify(utci_r, matrix(c(
+      -Inf, -40, 1, -40, -27, 2, -27, -13, 3, -13, 0, 4, 0, 9, 5,
+      9, 26, 6, 26, 32, 7, 32, 38, 8, 38, 46, 9, 46, Inf, 10
+    ), ncol = 3, byrow = TRUE))
+    terra::writeRaster(
+      utci_class,
+      file.path(out_dir, paste0("UTCI_class_", file_id, ".tif")),
+      overwrite = TRUE
+    )
+
+    gmean <- function(r) round(terra::global(r, "mean", na.rm = TRUE)[1, 1], 2)
+    summary_df <- rbind(
+      summary_df,
+      data.frame(
+        plot = plot_suffix,
+        ts_id = ts_id,
+        date = date_str,
+        hour_utc = hour_utc,
+        Ta = round(Ta_val, 1),
+        RH = round(rh_val, 1),
+        va_11m = round(max(va_val * (1.1 / 10.0)^0.2, 0.1), 2),
+        Tmrt_mean = gmean(Tmrt_C),
+        PET_mean = gmean(pet_r),
+        mPET_mean = gmean(mpet_r),
+        PMV_mean = gmean(pmv_r),
+        SET_mean = gmean(set_r),
+        UTCI_mean = gmean(utci_r),
+        stringsAsFactors = FALSE
+      )
+    )
+  }
+
+  utils::write.csv(summary_df, file.path(out_dir, paste0("summary_", plot_suffix, ".csv")), row.names = FALSE)
+  summary_df
+}
+
+#' Run BIOMET thermal comfort workflow
+#'
+#' Computes Tmrt and thermal comfort indices for each meteorological timestep.
+#'
+#' @param dem_dir Directory with DEM rasters.
+#' @param dsm_dir Directory with DSM rasters.
+#' @param svf_dir Directory with SVF rasters.
+#' @param lc_dir Directory with rasterized land-cover layers.
+#' @param out_dir Output directory for results.
+#' @param plot_suffix Plot identifier used to match raster filenames. You can
+#'   pass one suffix, a comma-separated list, `"auto"`, or `"all"`.
+#' @param met_xlsx Meteorological Excel file.
+#' @param alpha_k Shortwave absorptivity of the human body.
+#' @param eps_p Longwave emissivity of the human body.
+#' @param Met Metabolic rate in watts.
+#' @param Clo Clothing insulation in clo units.
+#' @param ht Body height in meters.
+#' @param mbody Body mass in kilograms.
+#'
+#' @return A data frame summarizing mean thermal metrics by timestep.
+#' @export
+biomet_thermal_comfort <- function(dem_dir,
+                                   dsm_dir,
+                                   svf_dir,
+                                   lc_dir,
+                                   out_dir,
+                                   plot_suffix,
+                                   met_xlsx,
+                                   alpha_k = 0.70,
+                                   eps_p = 0.97,
+                                   Met = 80,
+                                   Clo = 0.9,
+                                   ht = 1.75,
+                                   mbody = 75) {
+  biomet_dir_must_exist(dem_dir, "DEM")
+  biomet_dir_must_exist(dsm_dir, "DSM")
+  biomet_dir_must_exist(svf_dir, "SVF")
+  biomet_dir_must_exist(lc_dir, "Rasterized land-cover")
+  dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+
+  plot_suffixes <- biomet_resolve_plot_suffixes(
+    plot_suffix = plot_suffix,
+    dem_dir = dem_dir,
+    dsm_dir = dsm_dir,
+    svf_dir = svf_dir,
+    lc_dir = lc_dir
+  )
+
+  met_cols <- names(readxl::read_xlsx(met_xlsx, n_max = 0))
+  met_df <- as.data.frame(readxl::read_xlsx(met_xlsx, skip = 2, col_names = met_cols))
+  summaries <- lapply(
+    plot_suffixes,
+    function(current_suffix) {
+      biomet_thermal_comfort_one_plot(
+        dem_dir = dem_dir,
+        dsm_dir = dsm_dir,
+        svf_dir = svf_dir,
+        lc_dir = lc_dir,
+        out_dir = out_dir,
+        plot_suffix = current_suffix,
+        met_df = met_df,
+        alpha_k = alpha_k,
+        eps_p = eps_p,
+        Met = Met,
+        Clo = Clo,
+        ht = ht,
+        mbody = mbody
+      )
+    }
+  )
+
+  summary_df <- do.call(rbind, summaries)
+  rownames(summary_df) <- NULL
+
+  if (length(plot_suffixes) > 1) {
+    utils::write.csv(summary_df, file.path(out_dir, "summary_all_plots.csv"), row.names = FALSE)
+  }
+
+  summary_df
+}
+
+#' Run the full BIOMET pipeline
+#'
+#' Convenience wrapper that executes input checks, land-cover rasterization,
+#' SVF calculation, and thermal comfort modeling in sequence.
+#'
+#' @inheritParams biomet_rasterize_landcover
+#' @inheritParams biomet_calculate_svf
+#' @inheritParams biomet_thermal_comfort
+#'
+#' @return A named list with validation results and summaries from all steps.
+#' @export
+biomet_run_pipeline <- function(lc_path,
+                                obs_path,
+                                dem_dir,
+                                dsm_dir,
+                                lc_dir,
+                                svf_dir,
+                                out_dir,
+                                plot_suffix,
+                                met_xlsx,
+                                veg_types = c("tree", "shrub", "hedge"),
+                                num_directions = 72,
+                                max_distance = 30,
+                                observer_height = 1.5,
+                                alpha_k = 0.70,
+                                eps_p = 0.97,
+                                Met = 80,
+                                Clo = 0.9,
+                                ht = 1.75,
+                                mbody = 75) {
+  checks <- biomet_check_inputs(
+    lc_path = lc_path,
+    obs_path = obs_path,
+    dem_dir = dem_dir,
+    dsm_dir = dsm_dir,
+    met_xlsx = met_xlsx
+  )
+  if (!checks$ok) {
+    stop(paste(checks$messages, collapse = "\n"), call. = FALSE)
+  }
+
+  raster_summary <- biomet_rasterize_landcover(
+    lc_path = lc_path,
+    obs_path = obs_path,
+    dem_dir = dem_dir,
+    out_dir = lc_dir,
+    veg_types = veg_types
+  )
+  svf_summary <- biomet_calculate_svf(
+    dem_dir = dem_dir,
+    dsm_dir = dsm_dir,
+    svf_dir = svf_dir,
+    num_directions = num_directions,
+    max_distance = max_distance,
+    observer_height = observer_height
+  )
+  thermal_summary <- biomet_thermal_comfort(
+    dem_dir = dem_dir,
+    dsm_dir = dsm_dir,
+    svf_dir = svf_dir,
+    lc_dir = lc_dir,
+    out_dir = out_dir,
+    plot_suffix = plot_suffix,
+    met_xlsx = met_xlsx,
+    alpha_k = alpha_k,
+    eps_p = eps_p,
+    Met = Met,
+    Clo = Clo,
+    ht = ht,
+    mbody = mbody
+  )
+
+  list(
+    checks = checks,
+    rasterize = raster_summary,
+    svf = svf_summary,
+    thermal = thermal_summary
+  )
+}
