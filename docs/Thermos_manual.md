@@ -1,8 +1,8 @@
-# BIOMET Manual
+# Thermos Manual
 
 ## Purpose
 
-BIOMET is an `R` package and GUI for a reduced local workflow in outdoor
+Thermos is an `R` package and GUI for a reduced local workflow in outdoor
 bioclimatic preprocessing and thermal-comfort mapping.
 
 The package is organized around three scientific steps:
@@ -19,19 +19,19 @@ functions.
 
 ### Core functions
 
-- `biomet_rasterize_landcover()`
-- `biomet_calculate_svf()`
-- `biomet_thermal_comfort()`
-- `biomet_run_pipeline()`
+- `thermos_rasterize_landcover()`
+- `thermos_calculate_svf()`
+- `thermos_thermal_comfort()`
+- `thermos_run_pipeline()`
 
 ### Validation and helpers
 
-- `biomet_check_inputs()`
-- internal utility functions in `R/biomet-utils.R`
+- `thermos_check_inputs()`
+- internal utility functions in `R/thermos-utils.R`
 
 ### GUI
 
-- `biomet_gui()`
+- `thermos_gui()`
 
 ### Repository documentation
 
@@ -46,7 +46,7 @@ functions.
 Function:
 
 ```r
-biomet_rasterize_landcover(
+thermos_rasterize_landcover(
   lc_path,
   obs_path,
   dem_dir,
@@ -80,7 +80,7 @@ Outputs written per plot:
 Function:
 
 ```r
-biomet_calculate_svf(
+thermos_calculate_svf(
   dem_dir,
   dsm_dir,
   svf_dir,
@@ -106,7 +106,7 @@ Outputs written per plot:
 Function:
 
 ```r
-biomet_thermal_comfort(
+thermos_thermal_comfort(
   dem_dir,
   dsm_dir,
   svf_dir,
@@ -232,8 +232,8 @@ Meaning of the columns:
 - `DEM folder`: folder with one or more DEM rasters
 - `DSM folder`: folder with one or more DSM rasters
 - `Meteorological Excel`: time-step forcing table
-- `Parent output folder`: chosen parent folder; BIOMET creates
-  `BIOMET_outputs` inside it automatically
+- `Parent output folder`: chosen parent folder; Thermos creates
+  `Thermos_outputs` inside it automatically
 
 ### Plot selection
 
@@ -306,11 +306,11 @@ If the user selects a parent folder such as:
 C:/Users/your_name/Documents/MyRun
 ```
 
-BIOMET creates:
+Thermos creates:
 
 ```text
 MyRun/
-`-- BIOMET_outputs/
+`-- Thermos_outputs/
     |-- rasters_for_modeling/
     |-- svf/
     `-- results/
@@ -371,7 +371,7 @@ assessment.
 
 `UTCI_class` is a categorized raster based on `UTCI`.
 
-The current BIOMET class mapping is:
+The current Thermos class mapping is:
 
 - `1`: below `-40`
 - `2`: `-40` to `-27`
@@ -407,7 +407,7 @@ mask:
   - `LAI = 0`
   - `canopy_cover = 0`
 
-This means BIOMET uses explicit default physical assumptions, not averaged
+This means Thermos uses explicit default physical assumptions, not averaged
 values from neighboring cells.
 
 ## Practical Meaning Of Those Fallbacks
@@ -463,7 +463,7 @@ If the scientific question is about spatial comfort hotspots, `Tmrt`, `UTCI`,
 ## Minimal User Workflow
 
 1. Install the package.
-2. Run `library(BIOMET)` and `biomet_gui()`.
+2. Run `library(Thermos)` and `thermos_gui()`.
 3. Select the vector files, DEM folder, DSM folder, meteorological Excel, and a
    parent output folder.
 4. Use `Check inputs`.
@@ -475,7 +475,7 @@ If the scientific question is about spatial comfort hotspots, `Tmrt`, `UTCI`,
 6. Inspect:
    - summary table in the GUI
    - preview rasters in the Visualization panel
-   - written files in `BIOMET_outputs`
+   - written files in `Thermos_outputs`
 
 ## References
 

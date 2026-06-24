@@ -1,7 +1,6 @@
-if (!requireNamespace("BIOMET", quietly = TRUE)) {
-  stop("The BIOMET package is not installed yet. Run source('install.R') first.", call. = FALSE)
+if (!requireNamespace("Thermos", quietly = TRUE)) {
+  stop("The Thermos package is not installed yet. Run source('install.R') first.", call. = FALSE)
 }
 
-library(BIOMET)
-biomet_gui()
-
+library(Thermos)
+thermos_gui()

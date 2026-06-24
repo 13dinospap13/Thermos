@@ -1,4 +1,4 @@
-#' Validate BIOMET inputs
+#' Validate Thermos inputs
 #'
 #' Checks whether required files, folders, and expected vector fields exist.
 #'
@@ -12,7 +12,7 @@
 #'
 #' @return A list with `ok`, `messages`, and `details`.
 #' @export
-biomet_check_inputs <- function(lc_path = NULL,
+thermos_check_inputs <- function(lc_path = NULL,
                                 obs_path = NULL,
                                 dem_dir = NULL,
                                 dsm_dir = NULL,
@@ -142,4 +142,3 @@ biomet_check_inputs <- function(lc_path = NULL,
 
   list(ok = ok, messages = messages, details = details)
 }
-

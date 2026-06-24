@@ -1,9 +1,9 @@
-biomet_extract_suffix <- function(filepath) {
+thermos_extract_suffix <- function(filepath) {
   fname <- tools::file_path_sans_ext(basename(filepath))
   tail(strsplit(fname, "_")[[1]], 1)
 }
 
-biomet_list_suffixes <- function(dir_path, pattern = "\\.tif$") {
+thermos_list_suffixes <- function(dir_path, pattern = "\\.tif$") {
   if (is.null(dir_path) || !dir.exists(dir_path)) {
     return(character())
   }
@@ -13,18 +13,18 @@ biomet_list_suffixes <- function(dir_path, pattern = "\\.tif$") {
     return(character())
   }
 
-  unique(vapply(files, biomet_extract_suffix, character(1)))
+  unique(vapply(files, thermos_extract_suffix, character(1)))
 }
 
-biomet_detect_common_suffixes <- function(dem_dir,
+thermos_detect_common_suffixes <- function(dem_dir,
                                           dsm_dir = NULL,
                                           svf_dir = NULL,
                                           lc_dir = NULL) {
   suffix_sets <- list(
-    DEM = biomet_list_suffixes(dem_dir),
-    DSM = biomet_list_suffixes(dsm_dir),
-    SVF = biomet_list_suffixes(svf_dir),
-    LC = biomet_list_suffixes(lc_dir)
+    DEM = thermos_list_suffixes(dem_dir),
+    DSM = thermos_list_suffixes(dsm_dir),
+    SVF = thermos_list_suffixes(svf_dir),
+    LC = thermos_list_suffixes(lc_dir)
   )
   suffix_sets <- suffix_sets[lengths(suffix_sets) > 0]
 
@@ -35,19 +35,19 @@ biomet_detect_common_suffixes <- function(dem_dir,
   sort(Reduce(intersect, suffix_sets))
 }
 
-biomet_detect_available_suffixes <- function(dem_dir,
+thermos_detect_available_suffixes <- function(dem_dir,
                                              dsm_dir = NULL,
                                              svf_dir = NULL,
                                              lc_dir = NULL) {
   sort(unique(c(
-    biomet_list_suffixes(dem_dir),
-    biomet_list_suffixes(dsm_dir),
-    biomet_list_suffixes(svf_dir),
-    biomet_list_suffixes(lc_dir)
+    thermos_list_suffixes(dem_dir),
+    thermos_list_suffixes(dsm_dir),
+    thermos_list_suffixes(svf_dir),
+    thermos_list_suffixes(lc_dir)
   )))
 }
 
-biomet_normalize_plot_suffix_input <- function(plot_suffix) {
+thermos_normalize_plot_suffix_input <- function(plot_suffix) {
   if (is.null(plot_suffix)) {
     return(character())
   }
@@ -61,21 +61,21 @@ biomet_normalize_plot_suffix_input <- function(plot_suffix) {
   values[nzchar(values)]
 }
 
-biomet_resolve_plot_suffixes <- function(plot_suffix,
+thermos_resolve_plot_suffixes <- function(plot_suffix,
                                          dem_dir,
                                          dsm_dir = NULL,
                                          svf_dir = NULL,
                                          lc_dir = NULL) {
-  requested <- biomet_normalize_plot_suffix_input(plot_suffix)
+  requested <- thermos_normalize_plot_suffix_input(plot_suffix)
   requested_lower <- tolower(requested)
 
-  common_suffixes <- biomet_detect_common_suffixes(
+  common_suffixes <- thermos_detect_common_suffixes(
     dem_dir = dem_dir,
     dsm_dir = dsm_dir,
     svf_dir = svf_dir,
     lc_dir = lc_dir
   )
-  available_suffixes <- biomet_detect_available_suffixes(
+  available_suffixes <- thermos_detect_available_suffixes(
     dem_dir = dem_dir,
     dsm_dir = dsm_dir,
     svf_dir = svf_dir,
@@ -129,12 +129,12 @@ biomet_resolve_plot_suffixes <- function(plot_suffix,
   )
 }
 
-biomet_resolve_plot_suffix <- function(plot_suffix,
+thermos_resolve_plot_suffix <- function(plot_suffix,
                                        dem_dir,
                                        dsm_dir = NULL,
                                        svf_dir = NULL,
                                        lc_dir = NULL) {
-  resolved <- biomet_resolve_plot_suffixes(
+  resolved <- thermos_resolve_plot_suffixes(
     plot_suffix = plot_suffix,
     dem_dir = dem_dir,
     dsm_dir = dsm_dir,
@@ -153,12 +153,12 @@ biomet_resolve_plot_suffix <- function(plot_suffix,
   resolved[[1]]
 }
 
-biomet_rasterize_attr <- function(vec, ref, field) {
+thermos_rasterize_attr <- function(vec, ref, field) {
   r <- terra::rasterize(vec, ref, field = field, background = NA, touches = TRUE)
   terra::mask(r, ref)
 }
 
-biomet_fill_zero_in_mask <- function(r, dem) {
+thermos_fill_zero_in_mask <- function(r, dem) {
   dem_vals <- terra::values(dem, mat = FALSE)
   dem_vals[is.nan(dem_vals)] <- NA
   rv <- terra::values(r, mat = FALSE)
@@ -168,7 +168,7 @@ biomet_fill_zero_in_mask <- function(r, dem) {
   r
 }
 
-biomet_fill_default_in_mask <- function(r, dem, default) {
+thermos_fill_default_in_mask <- function(r, dem, default) {
   dem_vals <- terra::values(dem, mat = FALSE)
   dem_vals[is.nan(dem_vals)] <- NA
   rv <- terra::values(r, mat = FALSE)
@@ -179,7 +179,7 @@ biomet_fill_default_in_mask <- function(r, dem, default) {
   r
 }
 
-biomet_make_const_rast <- function(ref, value) {
+thermos_make_const_rast <- function(ref, value) {
   r <- terra::rast(ref)
   vals <- rep(value, terra::ncell(r))
   ref_vals <- terra::values(ref, mat = FALSE)
@@ -189,7 +189,7 @@ biomet_make_const_rast <- function(ref, value) {
   r
 }
 
-biomet_first_match <- function(dir_path, pattern, label) {
+thermos_first_match <- function(dir_path, pattern, label) {
   matches <- list.files(dir_path, pattern = pattern, full.names = TRUE)
   if (length(matches) == 0) {
     stop(label, " not found for pattern: ", pattern, call. = FALSE)
@@ -197,7 +197,7 @@ biomet_first_match <- function(dir_path, pattern, label) {
   matches[1]
 }
 
-biomet_dir_must_exist <- function(path, label) {
+thermos_dir_must_exist <- function(path, label) {
   if (!dir.exists(path)) {
     stop(label, " directory not found: ", path, call. = FALSE)
   }

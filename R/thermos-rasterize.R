@@ -10,12 +10,12 @@
 #'
 #' @return A data frame summarizing written rasters by plot suffix.
 #' @export
-biomet_rasterize_landcover <- function(lc_path,
+thermos_rasterize_landcover <- function(lc_path,
                                        obs_path,
                                        dem_dir,
                                        out_dir,
                                        veg_types = c("tree", "shrub", "hedge")) {
-  biomet_dir_must_exist(dem_dir, "DEM")
+  thermos_dir_must_exist(dem_dir, "DEM")
   dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
   lc_vec <- terra::vect(lc_path)
@@ -38,7 +38,7 @@ biomet_rasterize_landcover <- function(lc_path,
   )
 
   for (dem_path in dem_files) {
-    suffix <- biomet_extract_suffix(dem_path)
+    suffix <- thermos_extract_suffix(dem_path)
     dem <- terra::rast(dem_path)
 
     if (terra::crs(lc_vec) != terra::crs(dem)) {
@@ -52,34 +52,34 @@ biomet_rasterize_landcover <- function(lc_path,
     }
 
     terra::writeRaster(
-      biomet_rasterize_attr(lc_r, dem, "lc_class"),
+      thermos_rasterize_attr(lc_r, dem, "lc_class"),
       file.path(out_dir, paste0("landcover_", suffix, ".tif")),
       overwrite = TRUE,
       datatype = "INT1U"
     )
     terra::writeRaster(
-      biomet_rasterize_attr(lc_r, dem, "albedo"),
+      thermos_rasterize_attr(lc_r, dem, "albedo"),
       file.path(out_dir, paste0("albedo_", suffix, ".tif")),
       overwrite = TRUE
     )
     terra::writeRaster(
-      biomet_rasterize_attr(lc_r, dem, "emissivity"),
+      thermos_rasterize_attr(lc_r, dem, "emissivity"),
       file.path(out_dir, paste0("emis_", suffix, ".tif")),
       overwrite = TRUE
     )
     terra::writeRaster(
-      biomet_rasterize_attr(lc_r, dem, "z0"),
+      thermos_rasterize_attr(lc_r, dem, "z0"),
       file.path(out_dir, paste0("z0_", suffix, ".tif")),
       overwrite = TRUE
     )
     terra::writeRaster(
-      biomet_rasterize_attr(lc_r, dem, "et_scale"),
+      thermos_rasterize_attr(lc_r, dem, "et_scale"),
       file.path(out_dir, paste0("et_scale_", suffix, ".tif")),
       overwrite = TRUE
     )
 
-    lai_r <- biomet_fill_zero_in_mask(biomet_rasterize_attr(veg_r, dem, "lai"), dem)
-    cc_r <- biomet_fill_zero_in_mask(biomet_rasterize_attr(veg_r, dem, "canopy_cover"), dem)
+    lai_r <- thermos_fill_zero_in_mask(thermos_rasterize_attr(veg_r, dem, "lai"), dem)
+    cc_r <- thermos_fill_zero_in_mask(thermos_rasterize_attr(veg_r, dem, "canopy_cover"), dem)
 
     terra::writeRaster(
       lai_r,
@@ -92,22 +92,22 @@ biomet_rasterize_landcover <- function(lc_path,
       overwrite = TRUE
     )
     terra::writeRaster(
-      biomet_fill_zero_in_mask(biomet_rasterize_attr(veg_r, dem, "k_ext"), dem),
+      thermos_fill_zero_in_mask(thermos_rasterize_attr(veg_r, dem, "k_ext"), dem),
       file.path(out_dir, paste0("k_ext_", suffix, ".tif")),
       overwrite = TRUE
     )
     terra::writeRaster(
-      biomet_fill_zero_in_mask(biomet_rasterize_attr(veg_r, dem, "gai"), dem),
+      thermos_fill_zero_in_mask(thermos_rasterize_attr(veg_r, dem, "gai"), dem),
       file.path(out_dir, paste0("gai_", suffix, ".tif")),
       overwrite = TRUE
     )
     terra::writeRaster(
-      biomet_rasterize_attr(bldg_r, dem, "wall_albedo"),
+      thermos_rasterize_attr(bldg_r, dem, "wall_albedo"),
       file.path(out_dir, paste0("wall_albedo_", suffix, ".tif")),
       overwrite = TRUE
     )
     terra::writeRaster(
-      biomet_rasterize_attr(bldg_r, dem, "wall_emissivity"),
+      thermos_rasterize_attr(bldg_r, dem, "wall_emissivity"),
       file.path(out_dir, paste0("wall_emis_", suffix, ".tif")),
       overwrite = TRUE
     )

@@ -1,4 +1,4 @@
-biomet_compute_svf_matrix <- function(dsm_r,
+thermos_compute_svf_matrix <- function(dsm_r,
                                       dem_r,
                                       num_directions,
                                       max_distance,
@@ -82,14 +82,14 @@ biomet_compute_svf_matrix <- function(dsm_r,
 #'
 #' @return A summary data frame with plot status and SVF statistics.
 #' @export
-biomet_calculate_svf <- function(dem_dir,
+thermos_calculate_svf <- function(dem_dir,
                                  dsm_dir,
                                  svf_dir,
                                  num_directions = 72,
                                  max_distance = 30,
                                  observer_height = 1.5) {
-  biomet_dir_must_exist(dem_dir, "DEM")
-  biomet_dir_must_exist(dsm_dir, "DSM")
+  thermos_dir_must_exist(dem_dir, "DEM")
+  thermos_dir_must_exist(dsm_dir, "DSM")
   dir.create(svf_dir, showWarnings = FALSE, recursive = TRUE)
 
   dem_files <- list.files(dem_dir, pattern = "\\.tif$", full.names = TRUE)
@@ -107,7 +107,7 @@ biomet_calculate_svf <- function(dem_dir,
   )
 
   for (dem_path in dem_files) {
-    suffix <- biomet_extract_suffix(dem_path)
+    suffix <- thermos_extract_suffix(dem_path)
     dsm_candidates <- list.files(
       dsm_dir,
       pattern = paste0(suffix, "\\.tif$"),
@@ -137,7 +137,7 @@ biomet_calculate_svf <- function(dem_dir,
       dsm <- terra::resample(dsm, dem, method = "bilinear")
     }
 
-    svf <- biomet_compute_svf_matrix(
+    svf <- thermos_compute_svf_matrix(
       dsm_r = dsm,
       dem_r = dem,
       num_directions = num_directions,

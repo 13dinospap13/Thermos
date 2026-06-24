@@ -1,4 +1,4 @@
-Name: Launch BIOMET GUI
-Description: Open the BIOMET Shiny interface.
-Binding: biomet_gui
+Name: Launch Thermos GUI
+Description: Open the Thermos Shiny interface.
+Binding: thermos_gui
 Interactive: true

@@ -1,6 +1,6 @@
-# BIOMET
+# Thermos
 
-BIOMET is a private `R` package for bioclimatic preprocessing and thermal
+Thermos is a private `R` package for bioclimatic preprocessing and thermal
 comfort simulations.
 
 It is designed so the scientific workflow lives in reusable functions, while
@@ -10,17 +10,17 @@ workflow.
 ## Package structure
 
 ```text
-BIOMET/
+Thermos/
 |-- DESCRIPTION
 |-- LICENSE
 |-- NAMESPACE
 |-- R/
-|   |-- biomet-rasterize.R
-|   |-- biomet-svf.R
-|   |-- biomet-thermal.R
-|   |-- biomet-validation.R
-|   |-- biomet-utils.R
-|   `-- biomet-gui.R
+|   |-- thermos-rasterize.R
+|   |-- thermos-svf.R
+|   |-- thermos-thermal.R
+|   |-- thermos-validation.R
+|   |-- thermos-utils.R
+|   `-- thermos-gui.R
 |-- inst/
 |   |-- examples/
 |   `-- extdata/
@@ -29,12 +29,12 @@ BIOMET/
 
 ## Main exported functions
 
-- `biomet_rasterize_landcover()`
-- `biomet_calculate_svf()`
-- `biomet_thermal_comfort()`
-- `biomet_check_inputs()`
-- `biomet_run_pipeline()`
-- `biomet_gui()`
+- `thermos_rasterize_landcover()`
+- `thermos_calculate_svf()`
+- `thermos_thermal_comfort()`
+- `thermos_check_inputs()`
+- `thermos_run_pipeline()`
+- `thermos_gui()`
 
 ## Workflow
 
@@ -61,7 +61,7 @@ structure.
 
 ## Documentation
 
-- [BIOMET manual](docs/BIOMET_manual.md)
+- [Thermos manual](docs/Thermos_manual.md)
 - [Input requirements](docs/input_requirements.md)
 - [Install and run](docs/install_and_run.md)
 
@@ -71,14 +71,14 @@ structure.
 
 ```r
 install.packages("remotes")
-remotes::install_github("your-org-or-username/BIOMET", dependencies = TRUE)
+remotes::install_github("your-org-or-username/Thermos", dependencies = TRUE)
 ```
 
 ### Option 2: install from a local folder
 
 ```r
 install.packages("remotes")
-remotes::install_local("path/to/BIOMET", dependencies = TRUE)
+remotes::install_local("path/to/Thermos", dependencies = TRUE)
 ```
 
 ### Quick local install helper
@@ -94,8 +94,8 @@ source("install.R")
 After installation:
 
 ```r
-library(BIOMET)
-biomet_gui()
+library(Thermos)
+thermos_gui()
 ```
 
 Or from the repository folder:
@@ -107,9 +107,9 @@ source("launch_gui.R")
 ## Example usage in R
 
 ```r
-library(BIOMET)
+library(Thermos)
 
-checks <- biomet_check_inputs(
+checks <- thermos_check_inputs(
   lc_path = "path/to/landcover.gpkg",
   obs_path = "path/to/obstacles.gpkg",
   dem_dir = "path/to/dem_folder",

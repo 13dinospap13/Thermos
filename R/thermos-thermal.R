@@ -1,4 +1,4 @@
-biomet_compute_shadow <- function(dsm_r, dem_r, zenith_deg, azimuth_deg) {
+thermos_compute_shadow <- function(dsm_r, dem_r, zenith_deg, azimuth_deg) {
   r <- terra::res(dsm_r)[1]
   tan_elev <- tan((90 - zenith_deg) * pi / 180)
   az_rad <- azimuth_deg * pi / 180
@@ -57,7 +57,7 @@ biomet_compute_shadow <- function(dsm_r, dem_r, zenith_deg, azimuth_deg) {
   out
 }
 
-biomet_compute_I0 <- function(doy, hour_utc, lat_deg) {
+thermos_compute_I0 <- function(doy, hour_utc, lat_deg) {
   Isc <- 1367
   B <- 2 * pi * (doy - 1) / 365
   Ecc <- 1.00011 + 0.034221 * cos(B) + 0.00128 * sin(B) +
@@ -70,7 +70,7 @@ biomet_compute_I0 <- function(doy, hour_utc, lat_deg) {
   Isc * Ecc * pmax(cos_z, 0)
 }
 
-biomet_save_rast <- function(vec, name, ref, file_id, out_dir, dem_vals) {
+thermos_save_rast <- function(vec, name, ref, file_id, out_dir, dem_vals) {
   r <- terra::setValues(terra::rast(ref), vec)
   rv <- terra::values(r, mat = FALSE)
   rv[is.na(dem_vals)] <- NA
@@ -80,7 +80,7 @@ biomet_save_rast <- function(vec, name, ref, file_id, out_dir, dem_vals) {
   r
 }
 
-biomet_calc_pet <- function(ta, tr, v, vp, M, icl, ht, mbody) {
+thermos_calc_pet <- function(ta, tr, v, vp, M, icl, ht, mbody) {
   Adu <- 0.203 * mbody^0.425 * ht^0.725
   M_w2 <- M / Adu
   fcl <- 1 + 0.31 * icl / 0.155
@@ -95,7 +95,7 @@ biomet_calc_pet <- function(ta, tr, v, vp, M, icl, ht, mbody) {
   ta + (M_w2 - E_sw - E_re - R_cl - C_cl - 58.15) / (hc + hr)
 }
 
-biomet_calc_set <- function(ta, tr, v, rh, M, icl, ht, mbody) {
+thermos_calc_set <- function(ta, tr, v, rh, M, icl, ht, mbody) {
   Adu <- 0.203 * mbody^0.425 * ht^0.725
   M_w2 <- M / Adu
   pa_kPa <- rh / 100 * 0.6112 * exp(17.67 * ta / (ta + 243.5))
@@ -116,7 +116,7 @@ biomet_calc_set <- function(ta, tr, v, rh, M, icl, ht, mbody) {
   T_op - S / (h * Fcl)
 }
 
-biomet_lc_load <- function(name, plot_suffix, lc_dir, dem, dem_vals) {
+thermos_lc_load <- function(name, plot_suffix, lc_dir, dem, dem_vals) {
   p <- file.path(lc_dir, paste0(name, "_", plot_suffix, ".tif"))
   if (!file.exists(p)) {
     return(NULL)
@@ -131,21 +131,21 @@ biomet_lc_load <- function(name, plot_suffix, lc_dir, dem, dem_vals) {
   r
 }
 
-biomet_lc_load_safe <- function(name, default, plot_suffix, lc_dir, dem, dem_vals) {
-  r <- biomet_lc_load(name, plot_suffix, lc_dir, dem, dem_vals)
+thermos_lc_load_safe <- function(name, default, plot_suffix, lc_dir, dem, dem_vals) {
+  r <- thermos_lc_load(name, plot_suffix, lc_dir, dem, dem_vals)
   if (is.null(r)) {
-    return(biomet_make_const_rast(dem, default))
+    return(thermos_make_const_rast(dem, default))
   }
   rv <- terra::values(r, mat = FALSE)
   rv[is.nan(rv)] <- NA
   if (sum(!is.na(rv)) == 0) {
-    return(biomet_make_const_rast(dem, default))
+    return(thermos_make_const_rast(dem, default))
   }
   terra::values(r) <- rv
-  biomet_fill_default_in_mask(r, dem, default)
+  thermos_fill_default_in_mask(r, dem, default)
 }
 
-biomet_thermal_comfort_one_plot <- function(dem_dir,
+thermos_thermal_comfort_one_plot <- function(dem_dir,
                                             dsm_dir,
                                             svf_dir,
                                             lc_dir,
@@ -158,9 +158,9 @@ biomet_thermal_comfort_one_plot <- function(dem_dir,
                                             Clo = 0.9,
                                             ht = 1.75,
                                             mbody = 75) {
-  dem_path <- biomet_first_match(dem_dir, paste0(plot_suffix, "\\.tif$"), "DEM")
-  dsm_path <- biomet_first_match(dsm_dir, paste0(plot_suffix, "\\.tif$"), "DSM")
-  svf_path <- biomet_first_match(svf_dir, paste0(plot_suffix, "\\.tif$"), "SVF")
+  dem_path <- thermos_first_match(dem_dir, paste0(plot_suffix, "\\.tif$"), "DEM")
+  dsm_path <- thermos_first_match(dsm_dir, paste0(plot_suffix, "\\.tif$"), "DSM")
+  svf_path <- thermos_first_match(svf_dir, paste0(plot_suffix, "\\.tif$"), "SVF")
 
   dem <- terra::rast(dem_path)
   dsm <- terra::rast(dsm_path)
@@ -179,14 +179,14 @@ biomet_thermal_comfort_one_plot <- function(dem_dir,
   svf_vals[is.na(dem_vals)] <- NA
   terra::values(svf) <- svf_vals
 
-  albedo_r <- biomet_lc_load_safe("albedo", 0.15, plot_suffix, lc_dir, dem, dem_vals)
-  emis_r <- biomet_lc_load_safe("emis", 0.95, plot_suffix, lc_dir, dem, dem_vals)
-  gai_r <- biomet_lc_load_safe("gai", 0.0, plot_suffix, lc_dir, dem, dem_vals)
-  k_ext_r <- biomet_lc_load_safe("k_ext", 0.5, plot_suffix, lc_dir, dem, dem_vals)
-  et_scale_r <- biomet_lc_load_safe("et_scale", 0.0, plot_suffix, lc_dir, dem, dem_vals)
-  z0_r <- biomet_lc_load_safe("z0", 0.5, plot_suffix, lc_dir, dem, dem_vals)
-  wall_emis_r <- biomet_lc_load_safe("wall_emis", 0.92, plot_suffix, lc_dir, dem, dem_vals)
-  wall_alb_r <- biomet_lc_load_safe("wall_albedo", 0.0, plot_suffix, lc_dir, dem, dem_vals)
+  albedo_r <- thermos_lc_load_safe("albedo", 0.15, plot_suffix, lc_dir, dem, dem_vals)
+  emis_r <- thermos_lc_load_safe("emis", 0.95, plot_suffix, lc_dir, dem, dem_vals)
+  gai_r <- thermos_lc_load_safe("gai", 0.0, plot_suffix, lc_dir, dem, dem_vals)
+  k_ext_r <- thermos_lc_load_safe("k_ext", 0.5, plot_suffix, lc_dir, dem, dem_vals)
+  et_scale_r <- thermos_lc_load_safe("et_scale", 0.0, plot_suffix, lc_dir, dem, dem_vals)
+  z0_r <- thermos_lc_load_safe("z0", 0.5, plot_suffix, lc_dir, dem, dem_vals)
+  wall_emis_r <- thermos_lc_load_safe("wall_emis", 0.92, plot_suffix, lc_dir, dem, dem_vals)
+  wall_alb_r <- thermos_lc_load_safe("wall_albedo", 0.0, plot_suffix, lc_dir, dem, dem_vals)
 
   centroid_wgs84 <- terra::project(
     terra::vect(
@@ -252,14 +252,14 @@ biomet_thermal_comfort_one_plot <- function(dem_dir,
       next
     }
 
-    Ta_r <- biomet_make_const_rast(dem, Ta_val)
-    va_r <- biomet_make_const_rast(dem, va_val)
-    ssrd <- biomet_make_const_rast(dem, ssrd_val)
-    strd <- biomet_make_const_rast(dem, strd_val)
-    rh_r <- biomet_make_const_rast(dem, rh_val)
-    slhf_r <- biomet_make_const_rast(dem, slhf_val)
+    Ta_r <- thermos_make_const_rast(dem, Ta_val)
+    va_r <- thermos_make_const_rast(dem, va_val)
+    ssrd <- thermos_make_const_rast(dem, ssrd_val)
+    strd <- thermos_make_const_rast(dem, strd_val)
+    rh_r <- thermos_make_const_rast(dem, rh_val)
+    slhf_r <- thermos_make_const_rast(dem, slhf_val)
 
-    I0 <- biomet_compute_I0(doy, hour_utc, lat_site)
+    I0 <- thermos_compute_I0(doy, hour_utc, lat_site)
     if (I0 < 1) {
       next
     }
@@ -287,7 +287,7 @@ biomet_thermal_comfort_one_plot <- function(dem_dir,
     z_target <- 1.1
     va_11m_r <- terra::clamp(va_r * log(z_target / z0_r) / log(z_ref / z0_r), 0.5, 17)
 
-    shadow <- biomet_compute_shadow(dsm, dem, solar_zenith, solar_az)
+    shadow <- thermos_compute_shadow(dsm, dem, solar_zenith, solar_az)
     shd_v <- terra::values(shadow, mat = FALSE)
     shd_v[is.na(dem_vals)] <- NA
     terra::values(shadow) <- shd_v
@@ -402,11 +402,11 @@ biomet_thermal_comfort_one_plot <- function(dem_dir,
       (2.10793499e-06) * v_utci^3 * pa_utci + (-2.31382535e-07) * ta_u * v_utci^3 * pa_utci +
       (1.67677569e-08) * v_utci^4 * pa_utci
 
-    pet_tmp <- biomet_calc_pet(ta, tr, v, vp, Met, icl, ht, mbody)
+    pet_tmp <- thermos_calc_pet(ta, tr, v, vp, Met, icl, ht, mbody)
     Top <- 0.5 * ta + 0.5 * tr
     icl_auto <- pmax(pmin((-0.1635 * Top + 4.9431) * 0.155, 0.9 * 0.155), 0.1 * 0.155)
-    mpet_tmp <- biomet_calc_pet(ta, tr, v, vp, Met, icl_auto, ht, mbody)
-    set_tmp <- biomet_calc_set(ta, tr, v, rh, Met, icl, ht, mbody)
+    mpet_tmp <- thermos_calc_pet(ta, tr, v, vp, Met, icl_auto, ht, mbody)
+    set_tmp <- thermos_calc_set(ta, tr, v, rh, Met, icl, ht, mbody)
 
     pet_v <- rep(NA_real_, n)
     mpet_v <- rep(NA_real_, n)
@@ -419,11 +419,11 @@ biomet_thermal_comfort_one_plot <- function(dem_dir,
     set_v[valid] <- set_tmp
     utci_v[valid] <- utci_tmp
 
-    pet_r <- biomet_save_rast(pet_v, "PET", Ta_r, file_id, out_dir, dem_vals)
-    mpet_r <- biomet_save_rast(mpet_v, "mPET", Ta_r, file_id, out_dir, dem_vals)
-    pmv_r <- biomet_save_rast(pmv_v, "PMV", Ta_r, file_id, out_dir, dem_vals)
-    set_r <- biomet_save_rast(set_v, "SET", Ta_r, file_id, out_dir, dem_vals)
-    utci_r <- biomet_save_rast(utci_v, "UTCI", Ta_r, file_id, out_dir, dem_vals)
+    pet_r <- thermos_save_rast(pet_v, "PET", Ta_r, file_id, out_dir, dem_vals)
+    mpet_r <- thermos_save_rast(mpet_v, "mPET", Ta_r, file_id, out_dir, dem_vals)
+    pmv_r <- thermos_save_rast(pmv_v, "PMV", Ta_r, file_id, out_dir, dem_vals)
+    set_r <- thermos_save_rast(set_v, "SET", Ta_r, file_id, out_dir, dem_vals)
+    utci_r <- thermos_save_rast(utci_v, "UTCI", Ta_r, file_id, out_dir, dem_vals)
 
     utci_class <- terra::classify(utci_r, matrix(c(
       -Inf, -40, 1, -40, -27, 2, -27, -13, 3, -13, 0, 4, 0, 9, 5,
@@ -461,7 +461,7 @@ biomet_thermal_comfort_one_plot <- function(dem_dir,
   summary_df
 }
 
-#' Run BIOMET thermal comfort workflow
+#' Run Thermos thermal comfort workflow
 #'
 #' Computes Tmrt and thermal comfort indices for each meteorological timestep.
 #'
@@ -482,7 +482,7 @@ biomet_thermal_comfort_one_plot <- function(dem_dir,
 #'
 #' @return A data frame summarizing mean thermal metrics by timestep.
 #' @export
-biomet_thermal_comfort <- function(dem_dir,
+thermos_thermal_comfort <- function(dem_dir,
                                    dsm_dir,
                                    svf_dir,
                                    lc_dir,
@@ -495,13 +495,13 @@ biomet_thermal_comfort <- function(dem_dir,
                                    Clo = 0.9,
                                    ht = 1.75,
                                    mbody = 75) {
-  biomet_dir_must_exist(dem_dir, "DEM")
-  biomet_dir_must_exist(dsm_dir, "DSM")
-  biomet_dir_must_exist(svf_dir, "SVF")
-  biomet_dir_must_exist(lc_dir, "Rasterized land-cover")
+  thermos_dir_must_exist(dem_dir, "DEM")
+  thermos_dir_must_exist(dsm_dir, "DSM")
+  thermos_dir_must_exist(svf_dir, "SVF")
+  thermos_dir_must_exist(lc_dir, "Rasterized land-cover")
   dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
-  plot_suffixes <- biomet_resolve_plot_suffixes(
+  plot_suffixes <- thermos_resolve_plot_suffixes(
     plot_suffix = plot_suffix,
     dem_dir = dem_dir,
     dsm_dir = dsm_dir,
@@ -514,7 +514,7 @@ biomet_thermal_comfort <- function(dem_dir,
   summaries <- lapply(
     plot_suffixes,
     function(current_suffix) {
-      biomet_thermal_comfort_one_plot(
+      thermos_thermal_comfort_one_plot(
         dem_dir = dem_dir,
         dsm_dir = dsm_dir,
         svf_dir = svf_dir,
@@ -542,18 +542,18 @@ biomet_thermal_comfort <- function(dem_dir,
   summary_df
 }
 
-#' Run the full BIOMET pipeline
+#' Run the full Thermos pipeline
 #'
 #' Convenience wrapper that executes input checks, land-cover rasterization,
 #' SVF calculation, and thermal comfort modeling in sequence.
 #'
-#' @inheritParams biomet_rasterize_landcover
-#' @inheritParams biomet_calculate_svf
-#' @inheritParams biomet_thermal_comfort
+#' @inheritParams thermos_rasterize_landcover
+#' @inheritParams thermos_calculate_svf
+#' @inheritParams thermos_thermal_comfort
 #'
 #' @return A named list with validation results and summaries from all steps.
 #' @export
-biomet_run_pipeline <- function(lc_path,
+thermos_run_pipeline <- function(lc_path,
                                 obs_path,
                                 dem_dir,
                                 dsm_dir,
@@ -572,7 +572,7 @@ biomet_run_pipeline <- function(lc_path,
                                 Clo = 0.9,
                                 ht = 1.75,
                                 mbody = 75) {
-  checks <- biomet_check_inputs(
+  checks <- thermos_check_inputs(
     lc_path = lc_path,
     obs_path = obs_path,
     dem_dir = dem_dir,
@@ -583,14 +583,14 @@ biomet_run_pipeline <- function(lc_path,
     stop(paste(checks$messages, collapse = "\n"), call. = FALSE)
   }
 
-  raster_summary <- biomet_rasterize_landcover(
+  raster_summary <- thermos_rasterize_landcover(
     lc_path = lc_path,
     obs_path = obs_path,
     dem_dir = dem_dir,
     out_dir = lc_dir,
     veg_types = veg_types
   )
-  svf_summary <- biomet_calculate_svf(
+  svf_summary <- thermos_calculate_svf(
     dem_dir = dem_dir,
     dsm_dir = dsm_dir,
     svf_dir = svf_dir,
@@ -598,7 +598,7 @@ biomet_run_pipeline <- function(lc_path,
     max_distance = max_distance,
     observer_height = observer_height
   )
-  thermal_summary <- biomet_thermal_comfort(
+  thermal_summary <- thermos_thermal_comfort(
     dem_dir = dem_dir,
     dsm_dir = dsm_dir,
     svf_dir = svf_dir,

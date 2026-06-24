@@ -1,4 +1,4 @@
-library(BIOMET)
+library(Thermos)
 
 lc_path <- "path/to/landcover.gpkg"
 obs_path <- "path/to/obstacles.gpkg"
@@ -9,7 +9,7 @@ lc_dir <- "path/to/output/rasters_for_modeling"
 svf_dir <- "path/to/output/svf"
 out_dir <- "path/to/output/results"
 
-checks <- biomet_check_inputs(
+checks <- thermos_check_inputs(
   lc_path = lc_path,
   obs_path = obs_path,
   dem_dir = dem_dir,
@@ -20,7 +20,7 @@ checks <- biomet_check_inputs(
 print(checks)
 
 if (isTRUE(checks$ok)) {
-  raster_summary <- biomet_rasterize_landcover(
+  raster_summary <- thermos_rasterize_landcover(
     lc_path = lc_path,
     obs_path = obs_path,
     dem_dir = dem_dir,
@@ -28,14 +28,14 @@ if (isTRUE(checks$ok)) {
   )
   print(raster_summary)
 
-  svf_summary <- biomet_calculate_svf(
+  svf_summary <- thermos_calculate_svf(
     dem_dir = dem_dir,
     dsm_dir = dsm_dir,
     svf_dir = svf_dir
   )
   print(svf_summary)
 
-  thermal_summary <- biomet_thermal_comfort(
+  thermal_summary <- thermos_thermal_comfort(
     dem_dir = dem_dir,
     dsm_dir = dsm_dir,
     svf_dir = svf_dir,
@@ -46,4 +46,3 @@ if (isTRUE(checks$ok)) {
   )
   print(thermal_summary)
 }
-

@@ -3,4 +3,3 @@ if (!requireNamespace("remotes", quietly = TRUE)) {
 }
 
 remotes::install_local(".", dependencies = TRUE, upgrade = "never")
-

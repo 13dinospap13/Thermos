@@ -1,12 +1,12 @@
-Package: BIOMET
+Package: Thermos
 Title: Bioclimatic Preprocessing and Thermal Comfort Workflow
 Version: 0.1.0
 Authors@R: 
-    person(given = "BIOMET",
+    person(given = "Thermos",
            family = "Team",
            role = c("aut", "cre"),
-           email = "biomet.package@gmail.com")
-Description: Refactors the existing three-step BIOMET workflow into reusable
+           email = "thermos.package@gmail.com")
+Description: Refactors the existing three-step Thermos workflow into reusable
     R functions for land-cover rasterization, sky view factor calculation,
     thermal comfort modeling, input validation, and a Shiny GUI wrapper.
 License: file LICENSE
