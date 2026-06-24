@@ -65,6 +65,11 @@ The workflow writes outputs to user-provided directories such as:
 - SVF outputs
 - thermal-comfort outputs
 
+The GUI creates one project folder per analysis. The first run uses
+`Thermos_outputs`; later runs use `Thermos_outputs_1`,
+`Thermos_outputs_2`, and so on. Each project folder contains the relevant
+`rasters_for_modeling`, `svf`, and `results` subfolders.
+
 ## Reusing existing intermediate rasters
 
 Select **Thermal from existing rasters** in the GUI to skip land-cover

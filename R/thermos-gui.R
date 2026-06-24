@@ -1112,6 +1112,8 @@ thermos_gui <- function() {
       last_browse_dir <- shiny::reactiveVal(read_last_browse_dir())
       cached_input_paths <- shiny::reactiveVal(read_cached_input_paths())
       last_run_scripts <- shiny::reactiveVal(NULL)
+      current_output_dirs <- shiny::reactiveVal(NULL)
+      output_context <- shiny::reactiveVal(NULL)
 
       output$run_analysis_ui <- shiny::renderUI({
         label <- if (identical(input$workflow_mode, "thermal_only")) {
@@ -1508,11 +1510,11 @@ thermos_gui <- function() {
         )
       }
 
-      build_output_dirs <- function(root_dir) {
+      build_output_dirs <- function(root_dir, project_name = "Thermos_outputs") {
         if (is.null(root_dir) || !nzchar(root_dir)) {
           root_dir <- getwd()
         }
-        project_root <- file.path(root_dir, "Thermos_outputs")
+        project_root <- file.path(root_dir, project_name)
         list(
           parent = root_dir,
           root = project_root,
@@ -1522,8 +1524,49 @@ thermos_gui <- function() {
         )
       }
 
-      active_intermediate_dirs <- function() {
-        output_dirs <- build_output_dirs(input$output_root)
+      next_output_dirs <- function(root_dir) {
+        project_root <- thermos_next_output_root(root_dir)
+        build_output_dirs(root_dir, basename(project_root))
+      }
+
+      normalize_output_parent <- function(path) {
+        if (is.null(path) || !nzchar(path)) {
+          path <- getwd()
+        }
+        normalizePath(path, winslash = "/", mustWork = FALSE)
+      }
+
+      reserve_output_dirs <- function(context = "main", force_new = TRUE) {
+        dirs <- shiny::isolate(current_output_dirs())
+        same_parent <- !is.null(dirs) &&
+          identical(
+            normalize_output_parent(dirs$parent),
+            normalize_output_parent(input$output_root)
+          )
+
+        if (isTRUE(force_new) || !same_parent) {
+          dirs <- next_output_dirs(input$output_root)
+          current_output_dirs(dirs)
+        }
+        output_context(context)
+        dirs
+      }
+
+      displayed_output_dirs <- function() {
+        dirs <- current_output_dirs()
+        if (!is.null(dirs)) {
+          same_parent <- identical(
+            normalize_output_parent(dirs$parent),
+            normalize_output_parent(input$output_root)
+          )
+          if (same_parent) {
+            return(dirs)
+          }
+        }
+        next_output_dirs(input$output_root)
+      }
+
+      active_intermediate_dirs <- function(output_dirs = displayed_output_dirs()) {
         if (identical(input$workflow_mode, "thermal_only")) {
           return(list(
             lc_dir = input$existing_lc_dir,
@@ -1541,8 +1584,8 @@ thermos_gui <- function() {
           return(setNames(character(0), character(0)))
         }
 
-        dirs <- build_output_dirs(output_root)
-        intermediates <- active_intermediate_dirs()
+        dirs <- displayed_output_dirs()
+        intermediates <- active_intermediate_dirs(dirs)
         folder <- switch(
           category,
           rasters_for_modeling = intermediates$lc_dir,
@@ -1808,7 +1851,7 @@ thermos_gui <- function() {
             results(NULL)
             last_run_scripts(NULL)
             reset_visualization_state()
-            status("Selected parent output folder. Thermos will create a Thermos_outputs subfolder automatically.")
+            status("Selected parent output folder. Thermos will create a new numbered output folder for each analysis.")
             refresh_plot_suffix_choices(input$plot_suffix)
           }
         })
@@ -1819,6 +1862,8 @@ thermos_gui <- function() {
       }, ignoreInit = FALSE)
 
       shiny::observeEvent(input$output_root, {
+        current_output_dirs(NULL)
+        output_context(NULL)
         results(NULL)
         last_run_scripts(NULL)
         reset_visualization_state()
@@ -1842,13 +1887,14 @@ thermos_gui <- function() {
       }, ignoreInit = FALSE)
 
       shiny::observeEvent(input$workflow_mode, {
+        current_output_dirs(NULL)
+        output_context(NULL)
         reset_visualization_state()
         refresh_plot_suffix_choices(input$plot_suffix)
       }, ignoreInit = TRUE)
 
-      get_args <- function() {
-        output_dirs <- build_output_dirs(input$output_root)
-        intermediate_dirs <- active_intermediate_dirs()
+      get_args <- function(output_dirs = displayed_output_dirs()) {
+        intermediate_dirs <- active_intermediate_dirs(output_dirs)
         list(
           workflow_mode = input$workflow_mode,
           lc_path = input$lc_path,
@@ -1907,6 +1953,16 @@ thermos_gui <- function() {
         )
       }
 
+      ensure_no_active_task <- function() {
+        if (is.null(current_task())) {
+          return(TRUE)
+        }
+        message <- "Another Thermos analysis is already running. Stop it or wait until it finishes."
+        status(message)
+        show_error_alert("Analysis already running", message)
+        FALSE
+      }
+
       shiny::observeEvent(input$check, {
         args <- get_args()
         res <- validate_workflow_args(args)
@@ -1940,7 +1996,11 @@ thermos_gui <- function() {
       })
 
       shiny::observeEvent(input$run_raster, {
-        args <- get_args()
+        if (!ensure_no_active_task()) {
+          return()
+        }
+        output_dirs <- reserve_output_dirs(context = "step", force_new = TRUE)
+        args <- get_args(output_dirs)
         last_run_scripts(make_run_scripts(args, include = "raster"))
         start_background_task(
           task_type = "raster",
@@ -1958,7 +2018,15 @@ thermos_gui <- function() {
       })
 
       shiny::observeEvent(input$run_svf, {
-        args <- get_args()
+        if (!ensure_no_active_task()) {
+          return()
+        }
+        reuse_step_output <- identical(output_context(), "step")
+        output_dirs <- reserve_output_dirs(
+          context = "step",
+          force_new = !reuse_step_output
+        )
+        args <- get_args(output_dirs)
         last_run_scripts(make_run_scripts(args, include = "svf"))
         start_background_task(
           task_type = "svf",
@@ -1978,7 +2046,15 @@ thermos_gui <- function() {
       })
 
       shiny::observeEvent(input$run_thermal, {
-        args <- get_args()
+        if (!ensure_no_active_task()) {
+          return()
+        }
+        reuse_step_output <- identical(output_context(), "step")
+        output_dirs <- reserve_output_dirs(
+          context = "step",
+          force_new = !reuse_step_output
+        )
+        args <- get_args(output_dirs)
         if (is.null(validate_workflow_args(args, thermal_inputs_required = TRUE))) {
           return()
         }
@@ -2006,10 +2082,15 @@ thermos_gui <- function() {
       })
 
       shiny::observeEvent(input$run_all, {
+        if (!ensure_no_active_task()) {
+          return()
+        }
         args <- get_args()
         if (is.null(validate_workflow_args(args))) {
           return()
         }
+        output_dirs <- reserve_output_dirs(context = "main", force_new = TRUE)
+        args <- get_args(output_dirs)
 
         if (identical(args$workflow_mode, "thermal_only")) {
           last_run_scripts(make_run_scripts(args, include = "thermal"))
@@ -2066,7 +2147,7 @@ thermos_gui <- function() {
 
       output$status <- shiny::renderText(status())
       output$output_paths <- shiny::renderText({
-        dirs <- build_output_dirs(input$output_root)
+        dirs <- displayed_output_dirs()
         paste(
           paste("Parent output folder:", dirs$parent),
           paste("Thermos output folder:", dirs$root),

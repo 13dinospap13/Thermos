@@ -202,3 +202,24 @@ thermos_dir_must_exist <- function(path, label) {
     stop(label, " directory not found: ", path, call. = FALSE)
   }
 }
+
+thermos_next_output_root <- function(parent_dir,
+                                     base_name = "Thermos_outputs") {
+  if (is.null(parent_dir) || !nzchar(parent_dir)) {
+    parent_dir <- getwd()
+  }
+
+  candidate <- file.path(parent_dir, base_name)
+  if (!file.exists(candidate) && !dir.exists(candidate)) {
+    return(candidate)
+  }
+
+  index <- 1L
+  repeat {
+    candidate <- file.path(parent_dir, paste0(base_name, "_", index))
+    if (!file.exists(candidate) && !dir.exists(candidate)) {
+      return(candidate)
+    }
+    index <- index + 1L
+  }
+}

@@ -54,6 +54,11 @@ requires `svf_plot01.tif` and land-cover files such as
 `albedo_plot01.tif`, `emis_plot01.tif`, and the remaining generated layers.
 For multiple plots, the GUI can run one detected suffix or all complete plots.
 
+Each new analysis is written to a separate project folder inside the selected
+parent output directory. Thermos uses `Thermos_outputs` first, followed by
+`Thermos_outputs_1`, `Thermos_outputs_2`, and so on, so previous runs are not
+overwritten.
+
 ## Data policy
 
 Sample and test datasets are intentionally not included in this repository.
