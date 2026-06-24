@@ -1373,6 +1373,31 @@ thermos_gui <- function() {
         )
       }
 
+      show_error_alert <- function(title, message) {
+        session$sendCustomMessage("thermosStopAlert", list())
+        shiny::showModal(
+          shiny::modalDialog(
+            title = shiny::tagList(
+              shiny::icon("exclamation-triangle"),
+              title
+            ),
+            shiny::tags$pre(
+              style = paste(
+                "white-space: pre-wrap;",
+                "max-height: 55vh;",
+                "overflow-y: auto;",
+                "background: #fff7f7;",
+                "border: 1px solid #fecaca;",
+                "color: #991b1b;"
+              ),
+              message
+            ),
+            footer = shiny::modalButton("OK"),
+            easyClose = TRUE
+          )
+        )
+      }
+
       shiny::observeEvent(input$dismiss_completion_alert, {
         stop_completion_alert()
       })
@@ -1581,6 +1606,7 @@ thermos_gui <- function() {
             err_text <- "The background Thermos process ended unexpectedly."
           }
           status(paste(task$label, "error:", err_text))
+          show_error_alert(paste(task$label, "error"), err_text)
           return()
         }
 
@@ -1591,6 +1617,10 @@ thermos_gui <- function() {
 
         if (inherits(result_obj, "error")) {
           status(paste(task$label, "error:", conditionMessage(result_obj)))
+          show_error_alert(
+            paste(task$label, "error"),
+            conditionMessage(result_obj)
+          )
           return()
         }
 
@@ -1869,7 +1899,9 @@ thermos_gui <- function() {
             checks
           },
           error = function(e) {
-            status(paste("Input error:", conditionMessage(e)))
+            message <- conditionMessage(e)
+            status(paste("Input error:", message))
+            show_error_alert("Input error", message)
             NULL
           }
         )
